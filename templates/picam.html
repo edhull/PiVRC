@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta name="viewport" content="width=device-width, initial-scale=1">	
+		<script type="text/javascript" src="{{url_for('static', filename='socket.io.min.js')}}"></script>
+		<script type="text/javascript" src="{{url_for('static', filename='NoSleep.js')}}"></script>
+
+		<script>
+
+			// See the following resources for more information on why these rotational matrices work
+			// ~~~~
+			// https://w3c.github.io/deviceorientation/spec-source-orientation.html#worked-example
+			// https://dev.opera.com/articles/w3c-device-orientation-usage/#practicalconsiderations
+			// https://stackoverflow.com/questions/15022630/how-to-calculate-the-angle-from-roational-matrix
+			// ~~~~
+
+			var firstCompassHeading = true;
+			var compassoffset = 0.0;
+			var horizontal = null;
+
+			function init() {
+				var namespace = '/';
+				var socket = io.connect('http://' + document.domain + ':' + location.port);
+				var webcam = document.getElementById("webcam"); // Left eye
+				var webcam2 = document.getElementById("webcam2");
+				var dataContainerOrientation = document.getElementById('dataContainerOrientation');
+				var dataContainerMotion = document.getElementById('dataContainerMotion');
+				var rotatewarning = document.getElementById('rotatewarning');	
+				var degtorad = Math.PI / 180; // Degree-to-Radian conversion
+				var currentScreenOrientation = window.orientation || 0; // active default
+				socket.emit('tilted', currentScreenOrientation);
+		        if (currentScreenOrientation == "0")
+		        {
+					exitFullscreen();
+					horizontal = false;
+		        }
+				else
+				{
+					horizontal = true;
+					webcam.innerHTML = "<img src=\"http://192.168.1.100:1337/?action=stream\" />";	
+					var lefteye = document.getElementById("webcam");
+		        	var clone = lefteye.cloneNode(true);
+			        document.getElementById("webcam2").appendChild(clone);
+				}
+
+				// On Device Rotation
+				window.addEventListener('orientationchange', function() {
+				currentScreenOrientation = window.orientation;
+				socket.emit('tilted', currentScreenOrientation);
+				if (currentScreenOrientation == "0")
+				{
+					alert("Please rotate device to horizontal");
+					webcam.innerHTML = "";
+					webcam2.innerHTML = "";
+					horizontal = false;
+					exitFullscreen();
+				}
+				else
+				{
+		            webcam.innerHTML = "<img src=\"http://192.168.1.100:1337/?action=stream\" />";
+					horizontal = true;
+					var lefteye = document.getElementById("webcam");
+		            var clone = lefteye.cloneNode(true);
+			        document.getElementById("webcam2").appendChild(clone); // Clone left eye image to right eye image. 
+		       	}
+
+			}, false);
+
+			function enableNoSleep() 
+			{
+				  noSleep.enable();
+			}
+
+			
+			function launchIntoFullscreen(element) 
+			{
+				  if(element.requestFullscreen) {
+				    element.requestFullscreen();
+				  } else if(element.mozRequestFullScreen) {
+				    element.mozRequestFullScreen();
+				  } else if(element.webkitRequestFullscreen) {
+				    element.webkitRequestFullscreen();
+				  } else if(element.msRequestFullscreen) {
+				    element.msRequestFullscreen();
+				  }
+			}
+
+			function exitFullscreen() 
+			{
+				  if(document.exitFullscreen) {
+				    document.exitFullscreen();
+				  } else if(document.mozCancelFullScreen) {
+				    document.mozCancelFullScreen();
+				  } else if(document.webkitExitFullscreen) {
+				    document.webkitExitFullscreen();
+				  }
+			}
+
+			function getBaseRotationMatrix( alpha, beta, gamma ) 
+			{
+				var _x = beta  ? beta  * degtorad : 0; // beta value
+				var _y = gamma ? gamma * degtorad : 0; // gamma value
+				var _z = alpha ? alpha * degtorad : 0; // alpha value
+
+				var cX = Math.cos( _x );
+				var cY = Math.cos( _y );
+				var cZ = Math.cos( _z );
+				var sX = Math.sin( _x );
+				var sY = Math.sin( _y );
+				var sZ = Math.sin( _z );
+
+				//
+				// ZXY-ordered rotation matrix construction.
+				//
+
+				var m11 = cZ * cY - sZ * sX * sY;
+				var m12 = - cX * sZ;
+				var m13 = cY * sZ * sX + cZ * sY;
+				var m21 = cY * sZ + cZ * sX * sY;
+				var m22 = cZ * cX;
+				var m23 = sZ * sY - cZ * cY * sX;
+				var m31 = - cX * sY;
+				var m32 = sX;
+				var m33 = cX * cY;
+
+				return [
+					m11,    m12,    m13,
+					m21,    m22,    m23,
+					m31,    m32,    m33
+					];
+			}; 
+
+			function getScreenTransformationMatrix( screenOrientation ) 
+			{
+				var orientationAngle = screenOrientation ? screenOrientation * degtorad : 0;
+				var cA = Math.cos( orientationAngle );
+				var sA = Math.sin( orientationAngle );
+
+				// Construct screen transformation matrix
+				var r_s = [
+					cA,    -sA,    0,
+					sA,    cA,     0,
+					0,     0,      1
+				];
+
+				return r_s;
+			}
+
+			function getWorldTransformationMatrix() 
+			{
+				var x = 90 * degtorad;
+
+				var cA = Math.cos( x );
+				var sA = Math.sin( x );
+
+				var r_w = [
+					1,     0,    0,
+					0,     cA,   -sA,
+					0,     sA,   cA
+				];
+
+				return r_w;
+			}
+
+			function matrixMultiply( a, b ) 
+			{
+				var final = [];
+
+				final[0] = a[0] * b[0] + a[1] * b[3] + a[2] * b[6];
+				final[1] = a[0] * b[1] + a[1] * b[4] + a[2] * b[7];
+				final[2] = a[0] * b[2] + a[1] * b[5] + a[2] * b[8];
+
+				final[3] = a[3] * b[0] + a[4] * b[3] + a[5] * b[6];
+				final[4] = a[3] * b[1] + a[4] * b[4] + a[5] * b[7];
+				final[5] = a[3] * b[2] + a[4] * b[5] + a[5] * b[8];
+
+				final[6] = a[6] * b[0] + a[7] * b[3] + a[8] * b[6];
+				final[7] = a[6] * b[1] + a[7] * b[4] + a[8] * b[7];
+				final[8] = a[6] * b[2] + a[7] * b[5] + a[8] * b[8];
+
+				return final;
+			}
+
+			function computeMatrix() 
+			{
+				var rotationMatrix = getBaseRotationMatrix(
+					deviceOrientationData.alpha,
+					deviceOrientationData.beta,
+					deviceOrientationData.gamma
+				); 
+
+				var screenTransform = getScreenTransformationMatrix( currentScreenOrientation ); // r_s
+				var finalMatrix = matrixMultiply( rotationMatrix, screenTransform ); // R_s
+
+				return finalMatrix; // In the form [ m11, m12, m13, m21, m22, m23, m31, m32, m33 ]
+			}
+
+			if(window.DeviceOrientationEvent) 
+			{
+
+				window.addEventListener('deviceorientation', function(event) {
+				var namespace = '/';
+				var socket = io.connect('http://' + document.domain + ':' + location.port);
+				
+				var alpha = event.alpha;
+				var beta = event.beta;
+				var gamma = event.gamma;
+				var screenTransform = getScreenTransformationMatrix( currentScreenOrientation ); // 
+				var rotationMatrix = getBaseRotationMatrix(alpha, beta, gamma);		
+				var finalMatrix = matrixMultiply( rotationMatrix, screenTransform);
+				// in form [ m11, m12, m13, m21, m22, m23, m31, m32, m33 ]
+
+				m11 = finalMatrix[0];
+				m12 = finalMatrix[1];
+				m13 = finalMatrix[2];
+				m21 = finalMatrix[3];
+				m22 = finalMatrix[4];
+				m23 = finalMatrix[5];
+				m31 = finalMatrix[6];
+				m32 = finalMatrix[7];
+				m33 = finalMatrix[8];
+
+
+				// Calculate A, B, C rotation components
+
+				// Calculate headings
+				var tiltheading = Math.atan2(m32, m33);
+				var compassheading = Math.atan2(m21, m11);
+
+				// Convert radians to degrees
+				compassheading *= 180 / Math.PI;
+				tiltheading *= 180 / Math.PI;
+
+				// Fix rotation so always positive 0-360
+				compassheading = compassheading + 180;
+
+				// Set standard compass heading to 180 degrees on first opening so that their direction will be taken as the 'default' direction
+				if (firstCompassHeading == true)
+				{
+					firstCompassHeading = false;
+					if (compassheading - 180.0 > 0)
+					{
+						compassoffset = (compassheading - 180.0) * 1.0;
+					}
+					else if (180.0 - compassheading < 0)
+					{
+						compassoffset = (180.0 - compassheading) * -1.0;
+					}
+				}
+				compassheading = compassheading + compassoffset; // Apply offset to starting position
+				if (compassheading > 360)
+				{
+					compassheading = compassheading - 360;
+				}
+				if (compassheading < 0)
+				{
+					compassheading = compassheading + 360; 
+				}
+			
+				// Fix so tilt is always +ive 0-180
+				if (tiltheading < 0)
+				{
+					tiltheading *= -1;
+				}
+
+				if (horizontal) // Only emit values if phone is held horizontally
+				{
+					socket.emit('compassdeg', compassheading);
+					socket.emit('tiltdeg', tiltheading);
+				}
+				if(alpha!=null || beta!=null || gamma!=null)
+					  dataContainerOrientation.innerHTML = '<br /><br /><br /><br />Rotationheading: ' + tiltheading + '<br />Compassheading: ' + compassheading + "<br />Screenorientation deg: " + currentScreenOrientation;
+				}, false);
+			} 
+		}   
+		</script>
+	</head>
+	<body onload="init()">
+		<div id="webcam"  style="z-index:0;position:absolute;top:0;left:0%;width:50%;height:100%;">
+			<input type="button" id="toggle" value="Wake Lock Disabled" />
+		    <button onclick="launchFullscreen(document.documentElement);">Launch Fullscreen</button>
+		    <button onclick="exitFullscreen();">Hide Fullscreen</button>
+		</div>
+		<div id="webcam2" style="z-index:-1;position:absolute;top:0;left:50%;width:50%;height:100%;"></div>
+		<script>
+			var noSleep = new NoSleep();
+
+			var wakeLockEnabled = false;
+			var toggleEl = document.querySelector("#toggle");
+			toggleEl.addEventListener('click', function() {
+				if (!wakeLockEnabled) {
+					noSleep.enable(); // keep the screen on
+					wakeLockEnabled = true;
+					toggleEl.value = "Wake Lock Enabled";
+				} else {
+					noSleep.disable(); // let the screen turn off
+					wakeLockEnabled = false;
+					toggleEl.value = "Wake Lock Disabled";
+				}
+			}, false);
+	    </script>
+		<script>
+	 		function launchFullscreen(element) 
+	 		{
+                  if(element.requestFullscreen) {
+                    element.requestFullscreen();
+                  } else if(element.mozRequestFullScreen) {
+                    element.mozRequestFullScreen();
+                  } else if(element.webkitRequestFullscreen) {
+                    element.webkitRequestFullscreen();
+                  } else if(element.msRequestFullscreen) {
+                    element.msRequestFullscreen();
+                  }
+        	}
+
+        	function exitFullscreen() 
+        	{
+                  if(document.exitFullscreen) {
+                    document.exitFullscreen();
+                  } else if(document.mozCancelFullScreen) {
+                    document.mozCancelFullScreen();
+                  } else if(document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                  }
+        	}
+		</script>
+
+		<div id="dataContainerOrientation">
+	  		No device orientation data
+		</div>
+	</body>
+</html> 
