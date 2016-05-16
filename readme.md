@@ -49,7 +49,7 @@ $ sudo screen -S python -dm bash -c 'python ./picam.py;exec bash'
 ```
 Tailor these scripts to your circumstance. Ports, GPIO pins, and URLs are extremely likely to need changing.
 
-Picam.py will run the Flask web server, receive mobile telemetry, and translate this into XY rotations for the servos. p
+Picam.py will run the Flask web server, receive mobile telemetry, and translate this into XY rotations for the servos. Whether this will work depends on whether the mobile device accessing the Pi reports alpha/beta/gamma telemetry to a browser client, so make sure to test this (https://developers.arcgis.com/javascript/3/sandbox/sandbox.html?sample=mobile_compass)
 
 If you want to record footage from the camera, you can use Motion.
 ```sh
